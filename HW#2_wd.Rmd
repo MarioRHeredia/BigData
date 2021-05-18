@@ -1,0 +1,247 @@
+---
+title: "Assignment #2: Getting some data"
+author: "Team 3: Marianna Garcia, Yukong Li, Jiaqi Zhu, and Mario Rodriguez-Heredia"
+date: "May 7th, 2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(sjmisc)
+```
+
+## Loading the data
+
+Find data from at least two sources that the members of your team agree could be interesting. The data you choose should take some wrangling to get into a flat table format. Load the data into R and merge them into a single data frame (or tibble  in the language of tidyverse).
+
+**Answer:**
+We use the Global Terorism Data set (https://www.kaggle.com/START-UMD/gtd) to create a panel data set where we add different
+variables to the country-year level (e.g., number of terrorist attacks, number of causalties). Then, we joined this data with precipitation and temperature countries from the World Bank's Climate Change Knowledge Portal (https://climateknowledgeportal.worldbank.org/download-data). Finally, we include economic variables for each country using the package "pwt9" with the data of the Penn World Table V9.1.
+
+### Step by Step:
+
+**1.** We load terrorism microdata containing all terrorist attacks recorded between 1970 and 2017.
+
+```{r a, warning=FALSE, message=FALSE}
+terrorism <- read_csv('./data_terr/globalterrorismdb_0718dist.csv')
+```
+**2.** We clean some data and aggregate the individual records to data by country and year (whole code chunk in the markdown file included with this PDF). The new tibble `terr_x_ctry` contains variables such as number of attacks, fatalities, number of individuals wounded, attacks against the government or religious groups, data on weapons used, among others.
+
+```{r b, include=FALSE}
+
+# Reclassify location of some attacks to match with temperature and econ data
+terrorism <- terrorism %>% 
+  mutate( country_txt = ifelse(country_txt == "East Germany (GDR)", "Germany", country_txt),
+          country_txt = ifelse(country_txt == "West Germany (FRG)", "Germany", country_txt),
+          country_txt = ifelse(country_txt == "South Yemen", "Yemen", country_txt),
+          country_txt = ifelse(country_txt == "Myanmar", "Myanmar (Burma)", country_txt),
+          country_txt = ifelse(country_txt == "Republic of the Congo", "Congo (Republic of the)", country_txt),
+          country_txt = ifelse(country_txt == "People's Republic of the Congo", "Congo (Republic of the)", country_txt),
+          country_txt = ifelse(country_txt == "Democratic Republic of the Congo", "Congo (Republic of the)", country_txt),
+          country_txt = ifelse(country_txt == "Zaire", "Congo (Democratic Republic of the)", country_txt),
+          country_txt = ifelse(country_txt == "North Yemen", "Yemen", country_txt),
+          country_txt = ifelse(country_txt == "South Korea", "Korea" , country_txt),
+          country_txt = ifelse(country_txt == "Rhodesia", "Zimbabwe", country_txt),
+          country_txt = ifelse(country_txt == "Vatican City", "Italy", country_txt),
+          country_txt = ifelse(country_txt == "Ivory Coast", "Cote d'Ivoire", country_txt),
+          country_txt = ifelse(country_txt == "Montenegro", "Republic of Montenegro", country_txt),
+          country_txt = ifelse(country_txt == "Serbia", "Republic of Serbia", country_txt),
+          country_txt = ifelse(country_txt == "Slovak Republic", "Slovakia", country_txt),
+          country_txt = ifelse(country_txt == "South Vietnam", "Vietnam", country_txt),
+          country_txt = ifelse(country_txt == "Western Sahara", "Morocco", country_txt),
+          country_txt = ifelse(country_txt == "Bosnia-Herzegovina", "Bosnia and Herzegovina", country_txt),
+          )
+
+# Create indicator variables and group attacks by country-year
+terrorism <- terrorism %>% 
+  mutate(counter = 1,
+         atktrg_gov = ifelse(targtype1_txt == "Government (General)",1,0 ),
+         atktrg_diplom = ifelse(targtype1_txt == "Government (Diplomatic)",1,0 ),
+         atktrg_relig = ifelse(targtype1_txt == "Religious Figures/Institutions",1,0 ),
+         atktrg_air = ifelse(targtype1_txt == "Airports & Aircraft",1,0 ),
+         atktrg_military = ifelse(targtype1_txt == "Military",1,0 ),
+         atktrg_buss = ifelse(targtype1_txt == "Business",1,0 ),
+         atktrg_priv = ifelse(targtype1_txt == "Private Citizens & Property",1,0 ),
+         with_explosives = ifelse(weaptype1_txt == "Explosives",1,0 ),
+         with_sabotage = ifelse(weaptype1_txt == "Sabotage Equipment",1,0 ),
+         with_firearm = ifelse(weaptype1_txt == "Firearms",1,0 ))
+
+# summarize main variables by country-year
+terr_x_ctry <-  terrorism %>% group_by(iyear, country_txt) %>% 
+  summarize( number_of_attacks = sum(counter), # Total number of terrorist attacks
+             eventsLT1hr = sum(extended, na.rm = T), # terrorist events that last more than 1 hr
+             success = sum(success, na.rm = T), # successful terrorist attacks
+             suicide_attack = sum(suicide, na.rm = T), # suicide attacks
+             confirmed_fatalities = sum(nkill, na.rm = T), # confirmed fatalities
+             confirmed_us_fatal = sum(nkillus, na.rm = T), # confirmed US-Citizen fatalities
+             nkillter = sum(nkillter, na.rm = T), # confimed terrorist fatalities
+             nwound = sum(nwound, na.rm=T), # number of wounded 
+             nwoundus = sum(nwoundus, na.rm = T), # number of US-Citizens wounded
+             nwoundte = sum(nwoundte, na.rm = T), # number of terrorist wounded
+             involved_property = sum(property==1, na.rm = T), # number of attacks on property
+             ransom = sum(ransom==1, na.rm = T), # attacks were ransom was demanded
+             atktrg_gov = sum(atktrg_gov), # number of attacks on government (general)
+             atktrg_diplom = sum(atktrg_diplom), # number of attacks on government (diplomatic)
+             atktrg_relig = sum(atktrg_relig), # attack on religious figures/institutions
+             atktrg_air = sum(atktrg_air), # number of attacks on aircraft or airports
+             atktrg_military = sum(atktrg_military), # number of attacks on military
+             atktrg_buss = sum(atktrg_buss), # ... on business
+             atktrg_priv = sum(atktrg_priv), # ... on private property and citizens
+             with_explosives = sum(with_explosives), # attacks where explosives were used
+             with_sabotage = sum(with_sabotage), # attacks where sabotage equipment was used
+             with_firearm = sum(with_firearm) # attacks with firearms
+             ) %>% 
+  rename( country = country_txt, year = iyear)
+```
+
+```{r c, echo=TRUE}
+terr_x_ctry
+```
+
+***3.*** We join the aggregate data with an empty panel because countries with no events in specific years will not have observations in those years. Then, we substitute the NAs values in the full panel data set with zeros since an NA means there were no events recorded that year (whole code chunk in the markdown).
+```{r panel_data}
+# create empty panel data 
+panel <- tibble(year = rep(unique(terr_x_ctry$year), times = 195),
+                country = rep(unique(terr_x_ctry$country), each = 47))
+
+# join the empty panel with the aggregated terrorism data
+panel <- panel %>% 
+  left_join(terr_x_ctry, by = c('year' , 'country'))
+```
+
+````{r replace_NA, include = FALSE}
+# Replace NA for 0, since NA means that there were no attacks that month/year in
+# that country
+panel <- panel %>% 
+  mutate( number_of_attacks = ifelse(is.na(number_of_attacks), 0, number_of_attacks),
+          eventsLT1hr = ifelse(is.na(eventsLT1hr), 0, eventsLT1hr),
+          success = ifelse(is.na(success), 0, success),
+          suicide_attack = ifelse(is.na(suicide_attack), 0, suicide_attack),
+          confirmed_fatalities = ifelse(is.na(confirmed_fatalities), 0, confirmed_fatalities),
+          confirmed_us_fatal = ifelse(is.na(confirmed_us_fatal), 0, confirmed_us_fatal),
+          nkillter = ifelse(is.na(nkillter), 0, nkillter),
+          nwound = ifelse(is.na(nwound), 0, nwound),
+          nwoundus = ifelse(is.na(nwoundus), 0, nwoundus),
+          nwoundte = ifelse(is.na(nwoundte), 0, nwoundte),
+          involved_property = ifelse(is.na(involved_property), 0, involved_property),
+          ransom = ifelse(is.na(ransom), 0, ransom),
+          atktrg_gov = ifelse(is.na(atktrg_gov), 0, atktrg_gov),
+          atktrg_diplom = ifelse(is.na(atktrg_diplom), 0, atktrg_diplom),
+          atktrg_relig = ifelse(is.na(atktrg_relig), 0, atktrg_relig),
+          atktrg_air = ifelse(is.na(atktrg_air), 0, atktrg_air),
+          atktrg_military = ifelse(is.na(atktrg_military), 0, atktrg_military),
+          atktrg_buss = ifelse(is.na(atktrg_buss), 0, atktrg_buss),
+          atktrg_priv = ifelse(is.na(atktrg_priv), 0, atktrg_priv),
+          with_explosives = ifelse(is.na(with_explosives), 0, with_explosives),
+          with_sabotage = ifelse(is.na(with_sabotage), 0, with_sabotage),
+          with_firearm = ifelse(is.na(with_firearm), 0, with_firearm))
+
+
+#add_region
+regions_by_country <- terrorism %>% filter(!is.na(region_txt)) %>% 
+  group_by(country_txt) %>% 
+  summarize(region = first(region_txt)) %>% 
+  rename(country = country_txt)
+
+panel <-   panel %>% left_join(regions_by_country, by = "country" )
+
+# arrange columns
+panel <- move_columns(panel,  region, .after = country )
+```
+***4.***  We load the temperature and precipitation data and aggregate it at the country-year level. Then, we joined these sets with the terrorism tibble.
+
+```{r join_pr_rn, echo =TRUE, message=FALSE, warning=FALSE}
+#load precipitation and temperature data
+precipitation <- read_csv('./precipitation_1901_2020.csv') %>% 
+  rename( country = Country, year = Year ) 
+
+temperature <- read_csv('./temperature_1901_2020.csv') %>% 
+  rename( country = Country, year = Year )
+
+# summarize data by year and country
+precipitation_yr <- precipitation %>%  group_by(country, year) %>% 
+  summarize(av_rainfall_mm = mean(`Rainfall - (MM)`, na.rm=T),
+            max_rainfall_mm = max(`Rainfall - (MM)`, na.rm=T),
+            min_rainfall_mm = min(`Rainfall - (MM)`, na.rm=T),
+            sd_rainfall_mm = sd(`Rainfall - (MM)`, na.rm=T),
+            ISO3 = first(ISO3))
+
+temperature_yr <- temperature %>%  group_by(country, year) %>% 
+  summarize(av_temp_c = mean(`Temperature - (Celsius)`, na.rm=T),
+            max_temp_c = max(`Temperature - (Celsius)`, na.rm=T),
+            min_temp_c = min(`Temperature - (Celsius)`, na.rm=T),
+            sd_temp_c = sd(`Temperature - (Celsius)`, na.rm=T))
+
+# merge
+panel_df <- panel %>% left_join(precipitation_yr, by = c('year',  'country')) %>% 
+  left_join(temperature_yr, by = c('year', 'country'))
+
+```
+
+```{r move_columns, include=FALSE}
+panel_df <- move_columns(panel_df,  ISO3, .after = country )
+panel_df <- move_columns(panel_df,  av_rainfall_mm, .after = number_of_attacks )
+panel_df <- move_columns(panel_df,  av_temp_c, .after = av_rainfall_mm)
+panel_df <- tibble(panel_df)
+
+
+#  remaining cleaning issues
+check <- panel_df %>%  filter_all(any_vars(is.na(.)))
+unique(check$country)
+na_countries <- unique(check$country)
+sum(check$number_of_attacks) 
+```
+***5.*** We merge with the PWT9.1, arrange the columns, and do some last cleaning (whole code chunk in markdown file).
+
+```{r PWT, message=FALSE, warning=FALSE}
+# Data for Pen Wold Table
+require(pwt9)
+pwt_lite <- pwt9.1 %>% select(country, ISO3 = isocode, year, rgdpe, 
+                              pop, emp, hc, labsh, xr, pl_con, csh_c,
+                              csh_g, csh_i, csh_x, csh_m) %>% 
+  filter(year > 1969)
+
+# merge
+panel_df_vf <- panel_df %>% left_join(pwt_lite, by = c('year', 'country')) 
+```
+
+```{r cleaning_final, include=FALSE}
+panel_df_vf <- tibble(
+  move_columns(panel_df_vf, c('rgdpe', 'pop') , .after = av_temp_c))
+
+
+# eliminate countries were there is some missing data of precipitation
+panel_df_vf <- panel_df_vf %>% filter( !(country %in% na_countries) )
+
+panel_df_vf <-  panel_df_vf %>%  select(-c("ISO3.y")) %>% arrange(year) %>% 
+  arrange(desc(country))
+```
+
+```{r show, echo=TRUE}
+panel_df_vf
+```
+
+
+## Long to wide
+
+What is the unit of analysis or aggregation?  Can these data be switched between long and wide formats?  If so, do this and then identify the unit of analysis in the new dataset.
+
+**Answer:** We have a panel with years as the time variable and country as the cross-sectional, then our unit of observation is a country in a given year. Currently, our data is in long format, and we can switch it to a wide format, as shown below. In the wide-format, the unit of analysis is the country. However, since we have more than 40 variables, the number of columns increases significantly, and the data may be harder to visualize.
+
+```{r wide}
+
+# select time invariant variables
+time_invariant_var <- names(panel_df_vf)
+time_invariant_var <- time_invariant_var[!time_invariant_var
+                                         %in% c("year", "country", "ISO3.x",
+                                                "region" )]
+
+# switch to wide
+wide_df <- panel_df_vf %>%  pivot_wider(
+  names_from = c("year"),
+  values_from = all_of(time_invariant_var) ) %>% arrange(country)
+
+wide_df[,1:30] # show first 30 columns/variables only
+```
+
